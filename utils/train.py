@@ -5,10 +5,10 @@ import numpy as np
 import time
 import math
 
-from .datamodule import RNNDataModule, lineToTensor, randomTrainingExample
+from .datamodule import lineToTensor, randomTrainingExample
 
 
-def train_rnn(model, data_path='./data/names/', n_iters=10000):
+def train_rnn(model, data_module, n_iters=10000):
     """
     Train RNN using manual optimization
     
@@ -21,10 +21,6 @@ def train_rnn(model, data_path='./data/names/', n_iters=10000):
         Trained model and data module
     """
     
-    # Initialize data module
-    data_module = RNNDataModule(data_path=data_path)
-    data_module.setup()
-    
     print(f"Number of categories: {data_module.get_n_categories()}")
     print(f"Categories: {data_module.get_categories()}")
     
@@ -34,8 +30,8 @@ def train_rnn(model, data_path='./data/names/', n_iters=10000):
     # Training variables
     current_loss = 0
     all_losses = []
-    print_every = 1000
-    plot_every = 100
+    print_every = 5000
+    plot_every = 500
     
     def timeSince(since):
         now = time.time()
