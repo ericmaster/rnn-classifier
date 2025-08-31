@@ -6,6 +6,9 @@ import unicodedata
 from io import open
 import torch
 import pytorch_lightning as pl
+import numpy as np
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
 
 
 # Global variables for character encoding
@@ -62,6 +65,61 @@ def randomTrainingExample(category_lines, all_categories):
     return category, line, category_tensor, line_tensor
 
 
+def collate_fn(batch):
+    """Custom collate function to handle variable-length sequences"""
+    labels, sequences = zip(*batch)
+    
+    # Stack labels
+    labels = torch.stack(labels)
+    
+    # Pad sequences to the same length
+    # sequences is a list of tensors with shape (seq_len, 1, n_letters)
+    # We need to squeeze the middle dimension and then pad
+    sequences = [seq.squeeze(1) for seq in sequences]  # Remove the 1 dimension
+    padded_sequences = pad_sequence(sequences, batch_first=True)  # (batch_size, max_seq_len, n_letters)
+    
+    return labels, padded_sequences
+
+class RNNDataset(Dataset):
+    """Dataset con weighted sampling para balancear clases"""
+    
+    def __init__(self, category_lines, all_categories, num_samples=1000):
+        self.category_lines = category_lines
+        self.all_categories = all_categories
+        self.num_samples = num_samples
+        
+        # Calcular pesos para cada categoría
+        category_counts = [len(category_lines[cat]) for cat in all_categories]
+        total_samples = sum(category_counts)
+        
+        # Pesos inversamente proporcionales al tamaño
+        self.weights = [total_samples / (len(all_categories) * count) 
+                        for count in category_counts]
+        
+        # Normalizar pesos
+        total_weight = sum(self.weights)
+        self.weights = [w / total_weight for w in self.weights]
+
+        print(f"Pesos por categoría:")
+        for cat, weight in zip(all_categories, self.weights):
+            print(f"  {cat}: {weight:.4f}")
+    
+    def __len__(self):
+        return self.num_samples
+    
+    def __getitem__(self, idx):
+        # Seleccionar categoría según los pesos
+        category = np.random.choice(self.all_categories, p=self.weights)
+        
+        # Seleccionar nombre aleatorio de esa categoría
+        line = randomChoice(self.category_lines[category])
+        
+        # Preparar tensores
+        category_tensor = torch.tensor(self.all_categories.index(category), dtype=torch.long)
+        line_tensor = lineToTensor(line)  # Shape: (seq_len, 1, n_letters)
+        
+        return category_tensor, line_tensor
+
 class RNNDataModule(pl.LightningDataModule):
     """DataModule"""
     
@@ -72,13 +130,14 @@ class RNNDataModule(pl.LightningDataModule):
         
         # Will be set in setup()
         self.category_lines = {}
+        self.train_category_lines = {}
+        self.val_category_lines = {}
+        self.test_category_lines = {}
         self.all_categories = []
         self.n_categories = 0
         
     def setup(self, stage=None):
         """Setup data"""
-        self.category_lines = {}
-        self.all_categories = []
         
         # Read all name files
         for filename in glob.glob(os.path.join(self.data_path, '*.txt')):
@@ -89,14 +148,33 @@ class RNNDataModule(pl.LightningDataModule):
         
         self.n_categories = len(self.all_categories)
         print(f"Numero de clases: {self.n_categories}")
+
+        # Split in train, val and test (80%, 10%, 10%)
+        random.seed(42)  # For reproducibility
+        for category in self.all_categories:
+            lines = self.category_lines[category]
+            random.shuffle(lines)
+            n_total = len(lines)
+            n_train = int(0.8 * n_total)
+            n_val = int(0.1 * n_total)
+            self.train_category_lines[category] = lines[:n_train]
+            self.val_category_lines[category] = lines[n_train:n_train + n_val]
+            self.test_category_lines[category] = lines[n_train + n_val:]
     
     def train_dataloader(self):
         """Return a generator that yields random examples"""
-        return DataLoader(self.category_lines, self.all_categories, num_samples=100000)
+        dataset = RNNDataset(self.train_category_lines, self.all_categories, num_samples=100000)
+        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True, collate_fn=collate_fn)
     
     def val_dataloader(self):
         """Return a generator for validation"""
-        return DataLoader(self.category_lines, self.all_categories, num_samples=1000)
+        dataset = RNNDataset(self.val_category_lines, self.all_categories, num_samples=1000)
+        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, collate_fn=collate_fn)
+    
+    def test_dataloader(self):
+        """Return a generator for testing"""
+        dataset = RNNDataset(self.test_category_lines, self.all_categories, num_samples=1000)
+        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, collate_fn=collate_fn)
     
     def get_categories(self):
         """Get list of all categories"""
@@ -105,34 +183,3 @@ class RNNDataModule(pl.LightningDataModule):
     def get_n_categories(self):
         """Get number of categories"""
         return self.n_categories
-
-
-class DataLoader:
-    """Data loader with random sampling"""
-    
-    def __init__(self, category_lines, all_categories, num_samples=1000):
-        self.category_lines = category_lines
-        self.all_categories = all_categories
-        self.num_samples = num_samples
-        self.current_sample = 0
-    
-    def __iter__(self):
-        self.current_sample = 0
-        return self
-    
-    def __next__(self):
-        if self.current_sample >= self.num_samples:
-            raise StopIteration
-        
-        # Generate random example
-        category, line, category_tensor, line_tensor = randomTrainingExample(
-            self.category_lines, self.all_categories
-        )
-        
-        self.current_sample += 1
-        
-        # Return in the format expected by Lightning (category_tensor first for consistency)
-        return category_tensor[0], line_tensor  # Remove extra dimension from category_tensor
-    
-    def __len__(self):
-        return self.num_samples
