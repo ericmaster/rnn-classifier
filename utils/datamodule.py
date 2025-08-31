@@ -66,9 +66,9 @@ def collate_fn(batch):
     # sequences: tensores con shape (seq_len, 1, n_letters)
     # Hacemos squeeze para eliminar la dimension 1 y luego aplicamos pad_sequence
     sequences = [seq.squeeze(1) for seq in sequences]
-    padded_sequences = pad_sequence(sequences, batch_first=True)  # (batch_size, max_seq_len, n_letters)
+    sequences = pad_sequence(sequences, batch_first=True)  # (batch_size, max_seq_len, n_letters)
     
-    return padded_sequences, labels
+    return sequences, labels
 
 class RNNDataset(Dataset):
     """Dataset con weighted sampling para balancear clases"""

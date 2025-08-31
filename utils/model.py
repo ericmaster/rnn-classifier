@@ -20,12 +20,6 @@ class RNNClassifier(pl.LightningModule):
         self.learning_rate = learning_rate
         self.output_size = output_size
 
-        # RNN layers (for reference)
-        # self.i2h = nn.Linear(input_size, hidden_size)  # Wxh
-        # self.h2h = nn.Linear(hidden_size, hidden_size)  # Whh
-        # self.h2o = nn.Linear(hidden_size, output_size)  # Why
-        self.softmax = nn.LogSoftmax(dim=1)
-
         if (base_model == "rnn"):
             self.base_model = nn.RNN(input_size, hidden_size, num_layers=1, nonlinearity='tanh', batch_first=True)
         elif (base_model == "lstm"):
@@ -34,7 +28,9 @@ class RNNClassifier(pl.LightningModule):
             self.base_model = nn.GRU(input_size, hidden_size, num_layers=1, batch_first=True)
         else:
             raise ValueError(f"Unknown base_model: {base_model}")
-        self.out = nn.Linear(hidden_size, output_size)  # Fixed: should be hidden_size, not input_size
+        self.out = nn.Linear(hidden_size, output_size)
+
+        self.softmax = nn.LogSoftmax(dim=1)
 
         # Loss function
         self.criterion = nn.NLLLoss()
@@ -49,26 +45,27 @@ class RNNClassifier(pl.LightningModule):
 
     def forward(self, input):
         """Forward pass RNN"""
-        # hidden = F.tanh(self.i2h(input) + self.h2h(hidden))  # Wxh*x + Whh*h_(t-1)
-        # output = self.h2o(hidden)
-        # output = self.softmax(output)
-        # return output, hidden
 
+        # input shape: (batch_size, seq_len, input_size)
         batch_size = input.size(0)
-        hidden = self.initHidden(batch_size)
+        # hidden_0 shape: (num_layers, batch_size, hidden_size)
+        hidden_0 = self.initHidden(batch_size)
 
-        out, hidden = self.base_model(input, hidden)
-        # Use the last output of the sequence
-        output = self.out(out[:, -1, :])  # Take the last time step
+        out, hidden_n = self.base_model(input, hidden_0)
+        # out shape: (batch_size, seq_len, hidden_size)
+        # hidden_n shape: (num_layers, batch_size, hidden_size)
+
+        # Usamos el ultimo output de la secuencia
+        output = self.out(out[:, -1, :]) # (batch_size, output_size)
         output = self.softmax(output)
         return output
 
     # Pasos del proceso forward comunes entre train, val, test
     def _shared_step(self, batch):
         features, true_labels = batch
-        logits = self(features)  # Now returns only logits, not tuple
-        loss = torch.nn.functional.cross_entropy(logits, true_labels) # cross entropy loss recibe logits y labels como entrada. No recibe probabilidades!
-        predicted_labels = torch.argmax(logits, dim=1)
+        probs = self(features)
+        loss = self.criterion(probs, true_labels) # NLLloss receives logits
+        predicted_labels = torch.argmax(probs, dim=1)
 
         return loss, true_labels, predicted_labels
 
@@ -98,66 +95,6 @@ class RNNClassifier(pl.LightningModule):
     def initHidden(self, batch_size=1):
         """Initialize hidden state"""
         return torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
-
-
-    # def training_step(self, batch, batch_idx):
-    #     """Training step"""
-    #     category_tensor, line_tensor = batch
-
-    #     # Process the sequence
-    #     hidden = self.initHidden()
-
-    #     for i in range(line_tensor.size(0)):
-    #         output, hidden = self(line_tensor[i], hidden)
-
-    #     # Calculate loss
-    #     loss = self.criterion(output, category_tensor)
-
-    #     # Log the loss
-    #     self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-
-    #     return loss
-
-    # def validation_step(self, batch, batch_idx):
-    #     """Validation step"""
-    #     category_tensor, line_tensor = batch
-
-    #     # Process the sequence
-    #     hidden = self.initHidden()
-
-    #     for i in range(line_tensor.size(0)):
-    #         output, hidden = self(line_tensor[i], hidden)
-
-    #     # Calculate loss
-    #     loss = self.criterion(output, category_tensor)
-
-    #     # Calculate accuracy
-    #     _, predicted = torch.max(output, 1)
-    #     accuracy = (predicted == category_tensor).float()
-
-    #     # Log metrics
-    #     self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-    #     self.log("val_accuracy", accuracy, on_step=False, on_epoch=True, prog_bar=True)
-
-    #     return loss
-
-    # def configure_optimizers(self):
-    #     """Use manual optimization"""
-    #     # Return None to use manual optimization
-    #     return None
-
-    def manual_backward_step(self, loss):
-        """Manual backward step"""
-        loss.backward()
-
-        # Manual parameter update
-        with torch.no_grad():
-            for p in self.parameters():
-                if p.grad is not None:
-                    p.data.add_(p.grad.data, alpha=-self.learning_rate)
-
-        # Zero gradients
-        self.zero_grad()
 
     def categoryFromOutput(self, output, all_categories):
         """Get category from output"""
