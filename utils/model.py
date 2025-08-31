@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
+from torchmetrics import Accuracy
 
 
 class RNNClassifier(pl.LightningModule):
@@ -17,6 +18,7 @@ class RNNClassifier(pl.LightningModule):
 
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
+        self.output_size = output_size
 
         # RNN layers (for reference)
         # self.i2h = nn.Linear(input_size, hidden_size)  # Wxh
@@ -32,30 +34,39 @@ class RNNClassifier(pl.LightningModule):
             self.base_model = nn.GRU(input_size, hidden_size, num_layers=1, batch_first=True)
         else:
             raise ValueError(f"Unknown base_model: {base_model}")
-        self.out = nn.Linear(input_size, output_size)
+        self.out = nn.Linear(hidden_size, output_size)  # Fixed: should be hidden_size, not input_size
 
         # Loss function
         self.criterion = nn.NLLLoss()
+        
+        # Metrics
+        self.train_acc = Accuracy(task="multiclass", num_classes=output_size)
+        self.valid_acc = Accuracy(task="multiclass", num_classes=output_size)
+        self.test_acc = Accuracy(task="multiclass", num_classes=output_size)
 
         # Save hyperparameters
         self.save_hyperparameters()
 
-    def forward(self, input, hidden):
+    def forward(self, input):
         """Forward pass RNN"""
         # hidden = F.tanh(self.i2h(input) + self.h2h(hidden))  # Wxh*x + Whh*h_(t-1)
         # output = self.h2o(hidden)
         # output = self.softmax(output)
         # return output, hidden
 
+        batch_size = input.size(0)
+        hidden = self.initHidden(batch_size)
+
         out, hidden = self.base_model(input, hidden)
-        output = self.out(out[0])
+        # Use the last output of the sequence
+        output = self.out(out[:, -1, :])  # Take the last time step
         output = self.softmax(output)
-        return output, hidden
+        return output
 
     # Pasos del proceso forward comunes entre train, val, test
     def _shared_step(self, batch):
         features, true_labels = batch
-        logits = self(features)
+        logits = self(features)  # Now returns only logits, not tuple
         loss = torch.nn.functional.cross_entropy(logits, true_labels) # cross entropy loss recibe logits y labels como entrada. No recibe probabilidades!
         predicted_labels = torch.argmax(logits, dim=1)
 
@@ -66,7 +77,6 @@ class RNNClassifier(pl.LightningModule):
         self.log("train_loss", loss)
         self.train_acc(predicted_labels, true_labels)
         self.log("train_acc", self.train_acc, on_epoch=True, on_step=False)
-        self.model.train()
 
         return loss
 
@@ -85,9 +95,9 @@ class RNNClassifier(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr = self.learning_rate)
         return optimizer
 
-    def initHidden(self):
+    def initHidden(self, batch_size=1):
         """Initialize hidden state"""
-        return torch.zeros(1, self.hidden_size, device=self.device)
+        return torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
 
 
     # def training_step(self, batch, batch_idx):
@@ -157,9 +167,13 @@ class RNNClassifier(pl.LightningModule):
 
     def evaluate_name(self, line_tensor):
         """Evaluate a single name"""
-        hidden = self.initHidden()
-
-        for i in range(line_tensor.size(0)):
-            output, hidden = self(line_tensor[i], hidden)
+        # Add batch dimension if not present
+        if line_tensor.dim() == 3 and line_tensor.size(0) == 1:
+            # Already has batch dimension
+            output = self(line_tensor)
+        else:
+            # Add batch dimension
+            line_tensor = line_tensor.unsqueeze(0)  # Add batch dimension
+            output = self(line_tensor)
 
         return output

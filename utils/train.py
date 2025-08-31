@@ -5,7 +5,7 @@ import numpy as np
 import time
 import math
 
-from .datamodule import lineToTensor, randomTrainingExample
+from .datamodule import lineToTensor
 
 
 def train_rnn(model, data_module, n_iters=10000):
@@ -47,9 +47,9 @@ def train_rnn(model, data_module, n_iters=10000):
     # Training loop
     for iter in range(1, n_iters + 1):
         # Get random training example
-        category, line, category_tensor, line_tensor = randomTrainingExample(
-            data_module.category_lines, data_module.all_categories
-        )
+        # category, line, category_tensor, line_tensor = randomTrainingExample(
+        #     data_module.category_lines, data_module.all_categories
+        # )
         
         # Move to device
         category_tensor = category_tensor.to(model.device)
