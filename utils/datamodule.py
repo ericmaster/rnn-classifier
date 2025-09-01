@@ -117,7 +117,13 @@ class RNNDataset(Dataset):
             new_y = []
             new_lines = []
             for cat in self.categories:
+                # Si la categoria ya tiene el tamaño maximo, no hacemos nada
                 if len(self.category_X[cat]) >= max_size:
+                    new_X.extend(self.category_X[cat])
+                    new_y.extend(self.category_y[cat])
+                    new_lines.extend(self.category_lines[cat])
+                    if (verbose):
+                        print(f"{cat} - tamaño original: {len(self.category_X[cat])}")
                     continue
                 # TODO: mejorar esto para que no sean copias exactas. Generar con LLM?
                 new_category_X = self.category_X[cat] * (max_size // len(self.category_X[cat]))

@@ -2,7 +2,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
+import os
+import glob
 from torchmetrics import Accuracy, ConfusionMatrix
+
+def find_latest_checkpoint(base_model_name):
+    checkpoints_dir = f"./checkpoints/{base_model_name}/"
+    all_checkpoints = []
+    for filename in glob.glob(os.path.join(checkpoints_dir, '*.ckpt')):
+        all_checkpoints.append(filename)
+    
+    if all_checkpoints:
+        return max(all_checkpoints, key=os.path.getmtime)
+    return None
 
 
 class RNNClassifier(pl.LightningModule):
@@ -41,7 +53,7 @@ class RNNClassifier(pl.LightningModule):
         self.test_acc = Accuracy(task="multiclass", num_classes=output_size)
 
         # Confusion matrix
-        self.test_confmat = ConfusionMatrix(task="multiclass", num_classes=num_classes)
+        self.test_confmat = ConfusionMatrix(task="multiclass", num_classes=output_size)
 
         # Save hyperparameters
         self.save_hyperparameters()
@@ -92,6 +104,13 @@ class RNNClassifier(pl.LightningModule):
         self.log("test_acc", self.test_acc, on_epoch=True, on_step=False)
         self.test_confmat.update(predicted_labels, true_labels)
 
+    def on_test_epoch_end(self):
+        self.test_confmat_result = self.test_confmat.compute()
+        self.test_confmat.reset()
+
+    def get_confusion_matrix(self):
+        return self.test_confmat_result
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr = self.learning_rate)
         return optimizer
@@ -108,13 +127,14 @@ class RNNClassifier(pl.LightningModule):
 
     def evaluate_name(self, line_tensor):
         """Evaluate a single name"""
-        # Add batch dimension if not present
-        if line_tensor.dim() == 3 and line_tensor.size(0) == 1:
-            # Already has batch dimension
-            output = self(line_tensor)
-        else:
-            # Add batch dimension
-            line_tensor = line_tensor.unsqueeze(0)  # Add batch dimension
-            output = self(line_tensor)
 
+        if line_tensor.dim() == 3:
+            # lineToTensor shape: (seq_len, 1, n_letters)
+            # Convertimos dimensiones: (1, seq_len, n_letters) para batch_first=True
+            line_tensor = line_tensor.transpose(0, 1)  # (1, seq_len, n_letters)
+        elif line_tensor.dim() == 2:
+            # La linea tiene el formato (seq_len, n_letters), solo agregamos la dimension de batch
+            line_tensor = line_tensor.unsqueeze(0)  # (1, seq_len, n_letters)
+        
+        output = self(line_tensor)
         return output

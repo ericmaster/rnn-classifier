@@ -4,7 +4,7 @@ import time
 import os
 
 # Importar módulos personalizados
-from utils.model import RNNClassifier
+from utils.model import RNNClassifier, find_latest_checkpoint
 from utils.datamodule import RNNDataset, RNNDataModule, n_letters
 
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
@@ -31,8 +31,8 @@ if __name__ == "__main__":
     for key, value in CONFIG.items():
         print(f"  {key}: {value}")
 
-    # base_models = ["rnn", "lstm", "gru"]
-    base_models = ["rnn"]
+    base_models = ["rnn", "lstm", "gru"]
+    # base_models = ["rnn"] # Para debug, solo entrenamos el modelo RNN
 
     for base_model in base_models:
         print(f"Probando modelo base: {base_model}")
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
         # Guardamos el mejor modelo monitoreado en la acc de validación.
         callback_check = ModelCheckpoint(
-            dirpath="checkpoints/{base_model}",
+            dirpath=f"checkpoints/{base_model}",
             save_top_k=1,
             mode="max",
             monitor="valid_acc"
@@ -77,7 +77,7 @@ if __name__ == "__main__":
             verbose=True,
             mode='min'
         )
-        logger = CSVLogger(save_dir="logs/", name="rnn-classifier")
+        logger = CSVLogger(save_dir="logs/rnn-classifier", name=f"{base_model}")
 
         # Inicia entrenamiento
         trainer = pl.Trainer(
@@ -91,11 +91,11 @@ if __name__ == "__main__":
         )
 
         start_time = time.time()
-        ckpt_path = f"./checkpoints/{base_model}/epoch=48-step=47187.ckpt"
-        if (os.path.exists(ckpt_path)):
+        # ckpt_path = f"./checkpoints/{base_model}/epoch=75-step=73188.ckpt"
+        ckpt_path = find_latest_checkpoint(base_model)
+        if (ckpt_path):
             print(f"Cargando modelo desde checkpoint: {ckpt_path}")
         else:
-            ckpt_path = None
             print(f"No se encontró checkpoint en {ckpt_path}, entrenando desde cero.")
 
         trainer.fit(model=model, datamodule=data_module, ckpt_path=ckpt_path)

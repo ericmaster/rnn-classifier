@@ -2,12 +2,11 @@ import torch
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import numpy as np
-import time
-import math
+from pytorch_lightning.loggers import CSVLogger
 
 from .datamodule import lineToTensor
 
-def evaluate_model(model, data_module, n_samples=1000):
+def evaluate_model(trainer, model, data_module):
     """
     Evaluate the trained model
     
@@ -19,50 +18,35 @@ def evaluate_model(model, data_module, n_samples=1000):
     Returns:
         Accuracy and confusion matrix
     """
-    model.eval()
-    
-    categories = data_module.get_categories()
-    n_categories = len(categories)
-    
-    # Initialize confusion matrix
-    confusion = torch.zeros(n_categories, n_categories)
-    correct = 0
-    total = 0
-    
-    with torch.no_grad():
-        for i in range(n_samples):
-            # Get random example
-            category, line, category_tensor, line_tensor = randomTrainingExample(
-                data_module.category_lines, data_module.all_categories
-            )
-            
-            # Move to device
-            line_tensor = line_tensor.to(model.device)
-            
-            # Evaluate
-            output = model.evaluate_name(line_tensor)
-            guess, guess_i = model.categoryFromOutput(output, categories)
-            category_i = categories.index(category)
-            
-            # Update confusion matrix
-            confusion[category_i][guess_i] += 1
-            
-            # Update accuracy
-            correct += (guess == category)
-            total += 1
-    
-    # Calculate accuracy
-    accuracy = correct / total
-    
-    # Normalize confusion matrix
-    for i in range(n_categories):
-        if confusion[i].sum() > 0:
-            confusion[i] = confusion[i] / confusion[i].sum()
-    
-    return accuracy, confusion, categories
+    base_model = model.base_model
+    print(f"\nEvaluando modelo: {base_model.upper()}")
+
+    logger = CSVLogger(save_dir="logs/rnn-classifier", name=f"{base_model}", version="eval")
+
+    trainer = pl.Trainer(
+        max_epochs=10,
+        callbacks=[],
+        accelerator="auto",  # Uses GPUs or TPUs if available
+        devices="auto",  # Uses all available GPUs/TPUs if applicable
+        logger=logger,
+        deterministic=False,
+        log_every_n_steps=10,
+    )
+
+    trainer.test(model, datamodule=data_module)
+
+    cm = model.get_confusion_matrix()
+    if cm is None:
+        print(f"No se pudo obtener la matriz de confusión para el modelo {base_model}.")
+        return model
+
+    # # Visualizar matriz de confusión
+    # plot_confusion_matrix(cm, categories, 'Matriz de Confusión - RNN Classifier')
+
+    return model
 
 
-def plot_confusion_matrix(confusion, categories, title='Confusion Matrix'):
+def plot_confusion_matrix(cm, categories, title='Confusion Matrix'):
     """
     Plot confusion matrix
     
@@ -72,7 +56,7 @@ def plot_confusion_matrix(confusion, categories, title='Confusion Matrix'):
         title: Plot title
     """
     fig, ax = plt.subplots(figsize=(12, 10))
-    cax = ax.matshow(confusion.numpy(), cmap='Blues')
+    cax = ax.matshow(cm.cpu().numpy(), cmap='Blues')
     fig.colorbar(cax)
     
     # Set labels
@@ -90,7 +74,7 @@ def plot_confusion_matrix(confusion, categories, title='Confusion Matrix'):
     plt.show()
 
 
-def predict_name_origin(model, name, categories, n_predictions=3):
+def predict_name_origin(model, name, categories, n_predictions=3, verbose=True):
     """
     Predict the origin of a name
     
@@ -110,14 +94,15 @@ def predict_name_origin(model, name, categories, n_predictions=3):
         line_tensor = lineToTensor(name).to(model.device)
         output = model.evaluate_name(line_tensor)
         
-        # Get top N categories
+        # Obtenemos las N mejores categorias de clasificacion
         topv, topi = output.topk(n_predictions, 1, True)
         predictions = []
         
         for i in range(n_predictions):
             value = topv[0][i].item()
             category_index = topi[0][i].item()
-            print(f'({value:.2f}) {categories[category_index]}')
+            if verbose:
+                print(f'({value:.2f}) {categories[category_index]}')
             predictions.append([value, categories[category_index]])
     
     return predictions
