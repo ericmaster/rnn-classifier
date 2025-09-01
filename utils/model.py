@@ -31,6 +31,7 @@ class RNNClassifier(pl.LightningModule):
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
         self.output_size = output_size
+        self.base_model_type = base_model
 
         if (base_model == "rnn"):
             self.base_model = nn.RNN(input_size, hidden_size, num_layers=1, nonlinearity='tanh', batch_first=True)
@@ -63,10 +64,15 @@ class RNNClassifier(pl.LightningModule):
 
         # input shape: (batch_size, seq_len, input_size)
         batch_size = input.size(0)
-        # hidden_0 shape: (num_layers, batch_size, hidden_size)
+        # Inicializamos el hidden state (incluye cell state para LSTM)
         hidden_0 = self.initHidden(batch_size)
 
-        out, hidden_n = self.base_model(input, hidden_0)
+        if self.base_model_type == "lstm":
+            # LSTM recibe y devuelve (hidden_state, cell_state)
+            out, (hidden_n, cell_n) = self.base_model(input, hidden_0)
+        else:
+            # RNN and GRU espera y devuelve hidden state
+            out, hidden_n = self.base_model(input, hidden_0)
         # out shape: (batch_size, seq_len, hidden_size)
         # hidden_n shape: (num_layers, batch_size, hidden_size)
 
@@ -117,7 +123,14 @@ class RNNClassifier(pl.LightningModule):
 
     def initHidden(self, batch_size=1):
         """Initialize hidden state"""
-        return torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
+        if self.base_model_type == "lstm":
+            # LSTM necesita ambos hidden state y cell state
+            hidden_state = torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
+            cell_state = torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
+            return (hidden_state, cell_state)
+        else:
+            # RNN y GRU solo necesitan hidden state
+            return torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
 
     def categoryFromOutput(self, output, all_categories):
         """Get category from output"""

@@ -1,12 +1,14 @@
+import os
 import torch
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from pytorch_lightning.loggers import CSVLogger
 
 from .datamodule import lineToTensor
 
-def evaluate_model(trainer, model, data_module):
+def evaluate_model(model, data_module):
     """
     Evaluate the trained model
     
@@ -18,10 +20,11 @@ def evaluate_model(trainer, model, data_module):
     Returns:
         Accuracy and confusion matrix
     """
-    base_model = model.base_model
-    print(f"\nEvaluando modelo: {base_model.upper()}")
 
-    logger = CSVLogger(save_dir="logs/rnn-classifier", name=f"{base_model}", version="eval")
+    base_model_type = model.base_model_type
+    print(f"\nEvaluando modelo: {base_model_type.upper()}")
+
+    logger = CSVLogger(save_dir="logs/rnn-classifier", name=f"{base_model_type}", version="eval")
 
     trainer = pl.Trainer(
         max_epochs=10,
@@ -35,16 +38,47 @@ def evaluate_model(trainer, model, data_module):
 
     trainer.test(model, datamodule=data_module)
 
-    cm = model.get_confusion_matrix()
-    if cm is None:
-        print(f"No se pudo obtener la matriz de confusión para el modelo {base_model}.")
-        return model
-
-    # # Visualizar matriz de confusión
-    # plot_confusion_matrix(cm, categories, 'Matriz de Confusión - RNN Classifier')
-
     return model
 
+def plot_metrics(base_model):
+    # Concatenate metric files from all versions for the given model
+    log_dir = f"logs/rnn-classifier/{base_model}"
+    all_metrics = []
+
+    if not os.path.exists(log_dir):
+        print(f"No se encontró el directorio de logs para el modelo {base_model}. Saltando visualización.")
+        return
+    for version in os.listdir(log_dir):
+        if not version.startswith("version_"):
+            continue
+        version_dir = os.path.join(log_dir, version)
+        metrics_file = os.path.join(version_dir, "metrics.csv")
+        if os.path.exists(metrics_file):
+            df = pd.read_csv(metrics_file)
+            all_metrics.append(df)
+
+    if not all_metrics:
+        print(f"No se encontraron archivos de métricas para el modelo {base_model}. Saltando visualización.")
+        return
+
+    metrics = pd.concat(all_metrics, ignore_index=True)
+
+    aggreg_metrics = []
+    agg_col = "epoch"
+    for i, dfg in metrics.groupby(agg_col):
+        agg = dict(dfg.mean())
+        agg[agg_col] = i
+        aggreg_metrics.append(agg)
+
+    df_metrics = pd.DataFrame(aggreg_metrics)
+    df_metrics[["train_loss", "valid_loss"]].plot(
+        grid=True, legend=True, xlabel="Epoch", ylabel="Loss", title=f"Loss en RNN con {base_model.upper()}"
+    )
+    df_metrics[["train_acc", "valid_acc"]].plot(
+        grid=True, legend=True, xlabel="Epoch", ylabel="Accuracy", title=f"Accuracy en RNN con {base_model.upper()}"
+    )
+
+    plt.show()
 
 def plot_confusion_matrix(cm, categories, title='Confusion Matrix'):
     """
@@ -87,7 +121,8 @@ def predict_name_origin(model, name, categories, n_predictions=3, verbose=True):
     Returns:
         List of predictions with probabilities
     """
-    print(f'\n> {name}')
+    if verbose:
+        print(f'\n> {name}')
     
     model.eval()
     with torch.no_grad():

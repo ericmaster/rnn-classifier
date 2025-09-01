@@ -23,7 +23,7 @@ if __name__ == "__main__":
         "hidden_size": 128,
         "learning_rate": 0.00125,
         "n_epochs": 100,
-        "batch_size": 32,
+        "batch_size": 32, # "Friends dont let friends use minibatches larger than 32."
         "num_workers": 40,
     }
 
@@ -32,7 +32,7 @@ if __name__ == "__main__":
         print(f"  {key}: {value}")
 
     base_models = ["rnn", "lstm", "gru"]
-    # base_models = ["rnn"] # Para debug, solo entrenamos el modelo RNN
+    # base_models = ["lstm"] # Para debug, solo entrenamos un modelo RNN
 
     for base_model in base_models:
         print(f"Probando modelo base: {base_model}")
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         # Inicia entrenamiento
         trainer = pl.Trainer(
             max_epochs=CONFIG["n_epochs"],
-            callbacks=[callback_check, callback_tqdm],
+            callbacks=[callback_check, callback_tqdm, callback_early_stop],
             accelerator="auto",  # Uses GPUs or TPUs if available
             devices="auto",  # Uses all available GPUs/TPUs if applicable
             logger=logger,

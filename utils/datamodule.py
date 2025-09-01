@@ -7,6 +7,9 @@ from io import open
 import torch
 import pytorch_lightning as pl
 import numpy as np
+import subprocess
+import zipfile
+import urllib.request
 from torch.utils.data import Dataset, DataLoader, random_split
 from torch.nn.utils.rnn import pad_sequence
 
@@ -55,6 +58,43 @@ def randomChoice(l):
     """Random choice"""
     return l[random.randint(0, len(l) - 1)]
 
+def download_data(data_path='./data'):
+    """Download and extract the names dataset if it doesn't exist"""
+    if os.path.exists(data_path):
+        print("Los datos ya están disponibles.")
+        return
+    
+    print("Descargando datos...")
+    
+    # Download the data
+    url = "https://download.pytorch.org/tutorial/data.zip"
+    zip_path = "data.zip"
+    
+    try:
+        urllib.request.urlretrieve(url, zip_path)
+        print("Descarga completada.")
+        
+        # Extract the zip file
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall('.')
+        
+        # Remove the zip file
+        os.remove(zip_path)
+        print("Datos descargados y extraídos exitosamente!")
+        
+    except Exception as e:
+        print(f"Error al descargar los datos: {e}")
+        # Fallback to wget if urllib fails
+        try:
+            print("Intentando con wget...")
+            subprocess.run(['wget', url], check=True)
+            subprocess.run(['unzip', zip_path], check=True)
+            subprocess.run(['rm', zip_path], check=True)
+            print("Datos descargados exitosamente con wget!")
+        except subprocess.CalledProcessError as e:
+            print(f"Error con wget: {e}")
+            raise Exception("No se pudieron descargar los datos")
+
 def collate_fn(batch):
     """Custom collate function to handle variable-length sequences"""
     sequences, labels = zip(*batch)
@@ -73,7 +113,7 @@ def collate_fn(batch):
 class RNNDataset(Dataset):
     """Dataset con weighted sampling para balancear clases"""
     
-    def __init__(self, data_path='./data/names/', balanced=True, verbose=True):
+    def __init__(self, data_path='./data/names/', balanced=True, verbose=True, auto_download=True):
         self.data_path = data_path
         self.categories = []
         self.lines = []
@@ -82,6 +122,10 @@ class RNNDataset(Dataset):
         self.category_lines = {}
         self.category_X = {}
         self.category_y = {}
+
+        # Descargar datos automáticamente si no existen
+        if auto_download:
+            download_data('./data')
 
         # Leemos todos los archivos y almacenamos las lineas por categoria
         if (verbose):
@@ -160,17 +204,18 @@ class RNNDataset(Dataset):
 class RNNDataModule(pl.LightningDataModule):
     """DataModule"""
     
-    def __init__(self, data_path='./data/names/', batch_size=64, num_workers=4):
+    def __init__(self, data_path='./data/names/', batch_size=64, num_workers=4, auto_download=True):
         super().__init__()
         self.data_path = data_path
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.auto_download = auto_download
         self.dataset = None
         
     def setup(self, stage=None):
         """Setup data"""
         
-        self.dataset = RNNDataset(data_path=self.data_path, balanced=True, verbose=False)
+        self.dataset = RNNDataset(data_path=self.data_path, balanced=True, verbose=False, auto_download=self.auto_download)
         
         # Split into train, validation, test
 
