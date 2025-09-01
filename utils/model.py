@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from torchmetrics import Accuracy
+from torchmetrics import Accuracy, ConfusionMatrix
 
 
 class RNNClassifier(pl.LightningModule):
@@ -39,6 +39,9 @@ class RNNClassifier(pl.LightningModule):
         self.train_acc = Accuracy(task="multiclass", num_classes=output_size)
         self.valid_acc = Accuracy(task="multiclass", num_classes=output_size)
         self.test_acc = Accuracy(task="multiclass", num_classes=output_size)
+
+        # Confusion matrix
+        self.test_confmat = ConfusionMatrix(task="multiclass", num_classes=num_classes)
 
         # Save hyperparameters
         self.save_hyperparameters()
@@ -87,6 +90,7 @@ class RNNClassifier(pl.LightningModule):
         loss, true_labels, predicted_labels = self._shared_step(batch)
         self.test_acc(predicted_labels, true_labels)
         self.log("test_acc", self.test_acc, on_epoch=True, on_step=False)
+        self.test_confmat.update(predicted_labels, true_labels)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr = self.learning_rate)
