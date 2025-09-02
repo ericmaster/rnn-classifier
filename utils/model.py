@@ -23,6 +23,7 @@ class RNNClassifier(pl.LightningModule):
         input_size,
         hidden_size,
         output_size,
+        num_layers=1,
         base_model="rnn",
         learning_rate=0.005,
     ):
@@ -31,14 +32,15 @@ class RNNClassifier(pl.LightningModule):
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
         self.output_size = output_size
+        self.num_layers = num_layers
         self.base_model_type = base_model
 
         if (base_model == "rnn"):
-            self.base_model = nn.RNN(input_size, hidden_size, num_layers=1, nonlinearity='tanh', batch_first=True)
+            self.base_model = nn.RNN(input_size, hidden_size, num_layers=self.num_layers, nonlinearity='tanh', batch_first=True)
         elif (base_model == "lstm"):
-            self.base_model = nn.LSTM(input_size, hidden_size, num_layers=1, batch_first=True)
+            self.base_model = nn.LSTM(input_size, hidden_size, num_layers=self.num_layers, batch_first=True)
         elif (base_model == "gru"):
-            self.base_model = nn.GRU(input_size, hidden_size, num_layers=1, batch_first=True)
+            self.base_model = nn.GRU(input_size, hidden_size, num_layers=self.num_layers, batch_first=True)
         else:
             raise ValueError(f"Unknown base_model: {base_model}")
         self.out = nn.Linear(hidden_size, output_size)
@@ -125,12 +127,12 @@ class RNNClassifier(pl.LightningModule):
         """Initialize hidden state"""
         if self.base_model_type == "lstm":
             # LSTM necesita ambos hidden state y cell state
-            hidden_state = torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
-            cell_state = torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
+            hidden_state = torch.zeros(self.num_layers, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
+            cell_state = torch.zeros(self.num_layers, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
             return (hidden_state, cell_state)
         else:
             # RNN y GRU solo necesitan hidden state
-            return torch.zeros(1, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
+            return torch.zeros(self.num_layers, batch_size, self.hidden_size, dtype=torch.float32, device=self.device)
 
     def categoryFromOutput(self, output, all_categories):
         """Get category from output"""
