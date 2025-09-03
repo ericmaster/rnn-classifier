@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import torch
 import torchaudio
+import torch.nn.functional as F
 import torchaudio.transforms as T
 import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader, random_split
