@@ -17,7 +17,7 @@ from pytorch_lightning.loggers import CSVLogger
 
 torch.manual_seed(47)
 BATCH_SIZE = 64
-NUM_EPOCHS = 200
+NUM_EPOCHS = 300
 LEARNING_RATE = 1e-4
 NUM_WORKERS = 4
 CLASES = 50
@@ -26,7 +26,7 @@ WEIGHT_DECAY = 1e-5
 
 ANNOTATIONS_FILE = "./data/esc50/esc50.csv"
 AUDIO_DIR = "./data/esc50/audio/audio/44100"
-SAMPLE_RATE = 16_000
+SAMPLE_RATE = 22_050
 MAX_LEN_SEC = 5
 
 mel_transform = T.MelSpectrogram(
@@ -72,7 +72,7 @@ callback_check = ModelCheckpoint(
 )
 
 early_stopping = EarlyStopping(
-    monitor="valid_loss", patience=20, verbose=True, mode="min"
+    monitor="valid_loss", patience=30, verbose=True, mode="min"
 )
 
 lr_monitor = LearningRateMonitor(logging_interval="epoch")

@@ -7,9 +7,9 @@ import torch.nn.functional as F
 import torchaudio.transforms as T
 import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader, random_split
-from .augmentations import AudioAugmentations, SpectrogramAugmentations
+from .augmentations import AudioAugmentations, SpectrogramAugmentations, LightweightAugmentations, SimpleSpecAugment
 
-AUGMENTATIONS_PROB = 0.5
+AUGMENTATIONS_PROB = 0.4
 
 class EnviromentalDataset(Dataset):
     '''
@@ -23,20 +23,18 @@ class EnviromentalDataset(Dataset):
         self.max_len = max_len
         self.training = training
 
-         # Inicializar augmentations solo para entrenamiento
+         # Inicializar augmentations optimizadas para entrenamiento
         if training:
             self.audio_augmentations = AudioAugmentations(
+                apply_prob=0.5,
+                gain_range=(0.8, 1.2),
+                noise_snr_range=(20, 40),
                 sample_rate=target_sample_rate,
-                apply_prob=0.8,
-                noise_prob=0.4,
-                gain_prob=0.3,
-                time_stretch_prob=0.2
+                time_stretch_range=(0.9, 1.1)
             )
             self.spec_augmentations = SpectrogramAugmentations(
                 freq_mask_param=15,
-                time_mask_param=35,
-                num_freq_masks=2,
-                num_time_masks=2,
+                time_mask_param=20,
                 apply_prob=0.5
             )
         else:
@@ -114,7 +112,10 @@ class EnviromentalDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
 
     def setup(self, stage=None):
-        full = EnviromentalDataset(self.csv_file, self.root_dir, self.mel_transf, self.target_sr, self.max_len_s)
+        if stage == 'fit':
+            full = EnviromentalDataset(self.csv_file, self.root_dir, self.mel_transf, self.target_sr, self.max_len_s, training=True)
+        else:
+            full = EnviromentalDataset(self.csv_file, self.root_dir, self.mel_transf, self.target_sr, self.max_len_s, training=False)
         n = len(full)
         n_train = int(0.8 * n)
         n_val = (n - n_train) // 2
