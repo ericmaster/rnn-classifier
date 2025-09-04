@@ -1,4 +1,5 @@
 import os
+import random
 import pandas as pd
 import torch
 import torchaudio
@@ -6,17 +7,41 @@ import torch.nn.functional as F
 import torchaudio.transforms as T
 import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader, random_split
+from .augmentations import AudioAugmentations, SpectrogramAugmentations
+
+AUGMENTATIONS_PROB = 0.5
 
 class EnviromentalDataset(Dataset):
     '''
     Dataset para el dataset de audio ambiental.
     '''
-    def __init__(self, annotations_file, audio_dir, transformation, target_sample_rate, max_len):
+    def __init__(self, annotations_file, audio_dir, transformation, target_sample_rate, max_len, training=False):
         self.annotations = pd.read_csv(annotations_file)
         self.audio_dir = audio_dir
         self.transformation = transformation
         self.target_sample_rate = target_sample_rate
         self.max_len = max_len
+        self.training = training
+
+         # Inicializar augmentations solo para entrenamiento
+        if training:
+            self.audio_augmentations = AudioAugmentations(
+                sample_rate=target_sample_rate,
+                apply_prob=0.8,
+                noise_prob=0.4,
+                gain_prob=0.3,
+                time_stretch_prob=0.2
+            )
+            self.spec_augmentations = SpectrogramAugmentations(
+                freq_mask_param=15,
+                time_mask_param=35,
+                num_freq_masks=2,
+                num_time_masks=2,
+                apply_prob=0.5
+            )
+        else:
+            self.audio_augmentations = None
+            self.spec_augmentations = None
 
     def _get_audio_sample_path(self, index):
         fname = self.annotations.loc[index, 'filename']
@@ -61,7 +86,16 @@ class EnviromentalDataset(Dataset):
         signal = self._cut_if_necessary(signal)
         signal = self._right_pad_if_necessary(signal)
 
+        # Aplicar augmentations de audio en entrenamiento
+        if self.training and self.audio_augmentations is not None:
+            if random.random() < AUGMENTATIONS_PROB:  # probabilidad de aplicar augmentations básicas
+                signal = self.audio_augmentations(signal)
+
         mel = self.transformation(signal).to(torch.float32)  # [1, 64, T]
+
+        # Aplicar augmentations espectrales después de la transformación mel
+        if self.training and self.spec_augmentations is not None:
+            mel = self.spec_augmentations(mel)
         return mel, label
 
 
